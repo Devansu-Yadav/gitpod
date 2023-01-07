@@ -6,9 +6,7 @@ FROM cgr.dev/chainguard/wolfi-base:latest
 
 # Ensure latest packages are present, like security updates.
 RUN  apk upgrade --no-cache \
-  # bash: for devx
-  # tar: make kubectl cp work
-  && apk add --no-cache ca-certificates bash tar
+  && apk add --no-cache ca-certificates
 
 COPY components-ide-metrics--app/ide-metrics /app/ide-metrics
 
