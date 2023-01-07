@@ -13,8 +13,8 @@ RUN  apk upgrade --no-cache \
     jq
 
 # deps for tests to run
-RUN curl -fsSL "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl \
-  && chmod +x /usr/local/bin/kubectl
+RUN curl -fsSL "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/bin/kubectl \
+  && chmod +x /usr/bin/kubectl
 
 COPY test--app/bin /tests
 ENV PATH=$PATH:/tests
