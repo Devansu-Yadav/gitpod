@@ -124,10 +124,15 @@ export class GitpodHostUrl {
         return this.with((url) => ({ pathname: "/preferences" }));
     }
 
-    asStart(workspaceId = this.workspaceId): GitpodHostUrl {
+    asStart(workspaceId = this.workspaceId, parentOrigin?: string): GitpodHostUrl {
+        let search: string | undefined;
+        if (parentOrigin) {
+            search = new URLSearchParams({ parentOrigin }).toString();
+        }
         return this.withoutWorkspacePrefix().with({
             pathname: "/start/",
             hash: "#" + workspaceId,
+            search,
         });
     }
 

@@ -59,14 +59,14 @@ export function getGitpodService(): GitpodService {
 let ideFrontendService: IDEFrontendService | undefined;
 export function getIDEFrontendService(workspaceID: string, sessionId: string, service: GitpodService) {
     if (!ideFrontendService) {
-        ideFrontendService = new IDEFrontendService(workspaceID, sessionId, service, window.parent);
+        const parentOrigin = new URLSearchParams(window.location.search).get("parentOrigin") || undefined;
+        ideFrontendService = new IDEFrontendService(workspaceID, sessionId, service, window.parent, parentOrigin);
     }
     return ideFrontendService;
 }
 
 export class IDEFrontendService implements IDEFrontendDashboardService.IServer {
     private instanceID: string | undefined;
-    private ideUrl: URL | undefined;
     private user: User | undefined;
 
     private latestStatus?: IDEFrontendDashboardService.Status;
@@ -75,14 +75,15 @@ export class IDEFrontendService implements IDEFrontendDashboardService.IServer {
     readonly onSetState = this.onDidChangeEmitter.event;
 
     constructor(
-        private workspaceID: string,
-        private sessionId: string,
-        private service: GitpodService,
-        private clientWindow: Window,
+        private readonly workspaceID: string,
+        private readonly sessionId: string,
+        private readonly service: GitpodService,
+        private readonly clientWindow: Window,
+        private parentOrigin: string | undefined,
     ) {
         this.processServerInfo();
         window.addEventListener("message", (event: MessageEvent) => {
-            if (event.origin !== this.ideUrl?.origin) {
+            if (event.origin !== this.parentOrigin) {
                 return;
             }
 
@@ -116,7 +117,9 @@ export class IDEFrontendService implements IDEFrontendDashboardService.IServer {
         const reconcile = () => {
             const status = this.getWorkspaceStatus(listener.info);
             this.latestStatus = status;
-            this.ideUrl = status.ideUrl ? new URL(status.ideUrl) : undefined;
+            if (!this.parentOrigin && listener.info.latestInstance?.ideUrl) {
+                this.parentOrigin = new URL(listener.info.latestInstance?.ideUrl).origin;
+            }
             const oldInstanceID = this.instanceID;
             this.instanceID = status.instanceId;
             if (status.instanceId && oldInstanceID !== status.instanceId) {
@@ -170,7 +173,7 @@ export class IDEFrontendService implements IDEFrontendDashboardService.IServer {
     }
 
     sendStatusUpdate(status: IDEFrontendDashboardService.Status): void {
-        if (!this.ideUrl) {
+        if (!this.parentOrigin) {
             return;
         }
         this.clientWindow.postMessage(
@@ -178,17 +181,17 @@ export class IDEFrontendService implements IDEFrontendDashboardService.IServer {
                 type: "ide-status-update",
                 status,
             } as IDEFrontendDashboardService.StatusUpdateEventData,
-            this.ideUrl.origin,
+            this.parentOrigin,
         );
     }
 
     relocate(url: string): void {
-        if (!this.ideUrl) {
+        if (!this.parentOrigin) {
             return;
         }
         this.clientWindow.postMessage(
             { type: "ide-relocate", url } as IDEFrontendDashboardService.RelocateEventData,
-            this.ideUrl.origin,
+            this.parentOrigin,
         );
     }
 }

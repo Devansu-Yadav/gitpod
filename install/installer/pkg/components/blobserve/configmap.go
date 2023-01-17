@@ -45,6 +45,8 @@ func configmap(ctx *common.RenderContext) ([]runtime.Object, error) {
 				ctx.RepoName(ctx.Config.Repository, ide.CodeIDEImage): {
 					PrePull: []string{},
 					Workdir: "/ide",
+					// TODO it should be applied at runtime in codehelper as well
+					// reconsider how to configure in all modes, i.e. regular, debug, dev
 					Replacements: []blobserve.StringReplacement{{
 						Search:      "vscode-cdn.net",
 						Replacement: ctx.Config.Domain,

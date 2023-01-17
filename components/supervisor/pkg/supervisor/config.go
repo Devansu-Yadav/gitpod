@@ -83,9 +83,6 @@ type StaticConfig struct {
 	// APIEndpointPort is the port where to serve the API endpoint on
 	APIEndpointPort int `json:"apiEndpointPort"`
 
-	// HostAPIEndpointPort is the port where to the host API endpoint served
-	HostAPIEndpointPort *int `json:"hostAPIEndpointPort,omitempty"`
-
 	// SSHPort is the port we run the SSH server on
 	SSHPort int `json:"sshPort"`
 }
@@ -288,6 +285,9 @@ type WorkspaceConfig struct {
 
 	// OwnerId is the user id who owns the workspace
 	OwnerId string `env:"GITPOD_OWNER_ID"`
+
+	// DebugWorkspaceMode controls whether the supervisor is running in a debug workspace container.
+	DebugWorkspaceMode string `env:"SUPERVISOR_DEBUG_WORKSPACE_MODE"`
 }
 
 // WorkspaceGitpodToken is a list of tokens that should be added to supervisor's token service.
@@ -390,9 +390,19 @@ func (c WorkspaceConfig) GitpodAPIEndpoint() (endpoint, host string, err error) 
 	return
 }
 
+// isPrebuild returns true if the workspace is prebuild.
+func (c WorkspaceConfig) isPrebuild() bool {
+	return c.GitpodHeadless == "true" || c.DebugWorkspaceMode == "prebuild"
+}
+
 // getGitpodTasks returns true if the workspace is headless.
 func (c WorkspaceConfig) isHeadless() bool {
 	return c.GitpodHeadless == "true"
+}
+
+// isDebugWorkspace returns true if the workspace is in debug mode.
+func (c WorkspaceConfig) isDebugWorkspace() bool {
+	return c.DebugWorkspaceMode != ""
 }
 
 // getGitpodTasks parses gitpod tasks.

@@ -10,4 +10,4 @@ export const workspaceUrl = GitpodHostUrl.fromWorkspaceUrl(window.location.href)
 
 export const serverUrl = workspaceUrl.withoutWorkspacePrefix();
 
-export const startUrl = workspaceUrl.asStart();
+export const startUrl = workspaceUrl.asStart(workspaceUrl.workspaceId, window.origin);

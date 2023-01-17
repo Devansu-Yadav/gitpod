@@ -5,8 +5,12 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,10 +19,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gitpod-io/gitpod/common-go/log"
 	"github.com/gitpod-io/gitpod/gitpod-cli/pkg/supervisor"
 	"github.com/gitpod-io/gitpod/gitpod-cli/pkg/utils"
 	"github.com/gitpod-io/gitpod/supervisor/api"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	supervisorapi "github.com/gitpod-io/gitpod/supervisor/api"
+	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
 
 func TerminateExistingContainer(ctx context.Context) error {
@@ -55,13 +64,18 @@ func runRebuild(ctx context.Context, supervisorClient *supervisor.SupervisorClie
 		return utils.Outcome_SystemErr, err
 	}
 
+	workspaceFolder := rebuildOpts.WorkspaceFolder
+	if workspaceFolder == "" {
+		workspaceFolder = wsInfo.CheckoutLocation
+	}
+
 	tmpDir, err := os.MkdirTemp("", "gp-rebuild-*")
 	if err != nil {
 		return utils.Outcome_SystemErr, err
 	}
 	defer os.RemoveAll(tmpDir)
 
-	gitpodConfig, err := utils.ParseGitpodConfig(wsInfo.CheckoutLocation)
+	gitpodConfig, err := utils.ParseGitpodConfig(workspaceFolder)
 	if err != nil {
 		fmt.Println("The .gitpod.yml file cannot be parsed: please check the file and try again")
 		fmt.Println("")
@@ -89,7 +103,7 @@ func runRebuild(ctx context.Context, supervisorClient *supervisor.SupervisorClie
 	case string:
 		baseimage = "FROM " + img
 	case map[interface{}]interface{}:
-		dockerfilePath := filepath.Join(wsInfo.CheckoutLocation, img["file"].(string))
+		dockerfilePath := filepath.Join(workspaceFolder, img["file"].(string))
 
 		if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
 			fmt.Println("Your .gitpod.yml points to a Dockerfile that doesn't exist: " + dockerfilePath)
@@ -124,9 +138,8 @@ func runRebuild(ctx context.Context, supervisorClient *supervisor.SupervisorClie
 		return utils.Outcome_UserErr, nil
 	}
 
-	tmpDockerfile := filepath.Join(tmpDir, "Dockerfile")
-
-	err = os.WriteFile(tmpDockerfile, []byte(baseimage), 0644)
+	dockerFile := filepath.Join(tmpDir, "Dockerfile")
+	err = os.WriteFile(dockerFile, []byte(baseimage), 0644)
 	if err != nil {
 		fmt.Println("Could not write the temporary Dockerfile")
 		return utils.Outcome_SystemErr, err
@@ -139,9 +152,10 @@ func runRebuild(ctx context.Context, supervisorClient *supervisor.SupervisorClie
 		return utils.Outcome_SystemErr, err
 	}
 
-	tag := "gp-rebuild-temp-build"
+	imageTag := "gp-rebuild-temp-build"
 
-	dockerCmd := exec.CommandContext(ctx, dockerPath, "build", "-f", tmpDockerfile, "-t", tag, wsInfo.CheckoutLocation)
+	fmt.Println("Building the workspace image...")
+	dockerCmd := exec.Command(dockerPath, "build", "-t", imageTag, "-f", dockerFile, workspaceFolder)
 	dockerCmd.Stdout = os.Stdout
 	dockerCmd.Stderr = os.Stderr
 
@@ -159,60 +173,243 @@ func runRebuild(ctx context.Context, supervisorClient *supervisor.SupervisorClie
 	ImageBuildDuration := time.Since(imageBuildStartTime).Milliseconds()
 	event.Set("ImageBuildDuration", ImageBuildDuration)
 
+	if os.Getenv("SUPERVISOR_DEBUG_WORKSPACE_MODE") != "" {
+		fmt.Println("It is not possible to restart the debug workspace while you are currently inside it.")
+		event.Set("ErrorCode", utils.RebuildErrorCode_AlreadyInDebug)
+		return utils.Outcome_UserErr, nil
+	}
+	fmt.Println("\nStarting the debug workspace...")
 	err = TerminateExistingContainer(ctx)
 	if err != nil {
 		return utils.Outcome_SystemErr, err
 	}
 
-	welcomeMessage := strings.Join([]string{
-		"\n\nYou are now connected to the container.",
-		"Check if all tools and libraries you need are properly installed.",
-		"When you are done, type \"exit\" to return to your Gitpod workspace.\n",
-	}, "\n")
+	workspaceUrl, err := url.Parse(wsInfo.WorkspaceUrl)
+	if err != nil {
+		return utils.Outcome_SystemErr, err
+	}
+	workspaceUrl.Host = "debug-" + workspaceUrl.Host
 
-	dockerRunCmd := exec.CommandContext(ctx,
+	workspaceRootLocation := gitpodConfig.WorkspaceLocation
+	if workspaceRootLocation == "" {
+		workspaceRootLocation = workspaceFolder
+	}
+
+	// TODO what about auto derived by server, i.e. JB for prebuilds? we should move them into the workspace then
+	tasks, err := json.Marshal(gitpodConfig.Tasks)
+	if err != nil {
+		return utils.Outcome_SystemErr, err
+	}
+
+	// TODO run under sudo - a hack to get tokens properly
+	supervisorEnvs, err := exec.CommandContext(ctx, "sudo", "/.supervisor/supervisor", "debug-env").CombinedOutput()
+	if err != nil {
+		return utils.Outcome_SystemErr, err
+	}
+
+	debugMode := "true"
+	if rebuildOpts.Prebuild {
+		debugMode = "prebuild"
+	} else if rebuildOpts.From == "prebuild" {
+		debugMode = "prebuilt"
+	} else if rebuildOpts.From == "snapshot" {
+		debugMode = "snapshot"
+	}
+
+	var debugEnvs []string
+	debugEnvs = append(debugEnvs, fmt.Sprintf("SUPERVISOR_DEBUG_WORKSPACE_MODE=%s", debugMode))
+	debugEnvs = append(debugEnvs, fmt.Sprintf("GITPOD_TASKS=%s", string(tasks)))
+	debugEnvs = append(debugEnvs, fmt.Sprintf("GITPOD_PREVENT_METADATA_ACCESS=%s", "false"))
+	debugEnvs = append(debugEnvs, fmt.Sprintf("GITPOD_WORKSPACE_URL=%s", workspaceUrl))
+	debugEnvs = append(debugEnvs, fmt.Sprintf("GITPOD_REPO_ROOT=%s", workspaceFolder))
+	debugEnvs = append(debugEnvs, fmt.Sprintf("GITPOD_REPO_ROOTS=%s", workspaceFolder))
+	debugEnvs = append(debugEnvs, fmt.Sprintf("THEIA_WORKSPACE_ROOT=%s", workspaceRootLocation))
+	debugEnvs = append(debugEnvs, fmt.Sprintf("GITPOD_ANALYTICS_WRITER=%s", "none"))
+	debugEnvs = append(debugEnvs, fmt.Sprintf("GITPOD_ANALYTICS_SEGMENT_KEY=%s", ""))
+
+	// TODO project? - should not it be covered by gp env
+	userEnvs, err := exec.CommandContext(ctx, "gp", "env").CombinedOutput()
+	if err != nil {
+		return utils.Outcome_SystemErr, err
+	}
+
+	envs := string(supervisorEnvs)
+	for _, env := range debugEnvs {
+		envs += env + "\n"
+	}
+	envs += string(userEnvs)
+
+	envFile := filepath.Join(tmpDir, ".env")
+	err = os.WriteFile(envFile, []byte(envs), 0644)
+	if err != nil {
+		return utils.Outcome_SystemErr, err
+	}
+
+	runCmd := exec.CommandContext(
+		ctx,
 		dockerPath,
 		"run",
 		"--rm",
-		"-v", "/workspace:/workspace",
+		"--user", "root",
+		"--privileged",
 		"--label", "gp-rebuild=true",
-		"-it", tag,
-		"sh",
-		"-c",
-		fmt.Sprintf(`
-			echo "%s";
-			cd "%s";
-			if [ -x "$(command -v $SHELL)" ]; then
-				$SHELL;
-			else
-				if [ -x "$(command -v bash)" ]; then
-					bash;
-				else
-					sh;
-				fi;
-			fi;
-		`, welcomeMessage, wsInfo.CheckoutLocation),
+		"--env-file", envFile,
+
+		// ports
+		"-p", "24999:22999", // supervisor
+		"-p", "25000:23000", // Web IDE
+		"-p", "25001:23001", // SSH
+		// 23002 dekstop IDE port, but it is covered by debug workspace proxy
+		"-p", "25003:23003", // debug workspace proxy
+
+		// volumes
+		"-v", "/workspace:/workspace",
+		"-v", "/.supervisor:/.supervisor",
+		"-v", "/var/run/docker.sock:/var/run/docker.sock",
+		"-v", "/ide:/ide",
+		"-v", "/ide-desktop:/ide-desktop",
+		"-v", "/ide-desktop-plugins:/ide-desktop-plugins", // TODO refactor to keep all IDE deps under ide or ide-desktop
+
+		imageTag,
+		"/.supervisor/supervisor", "init",
 	)
 
-	dockerRunCmd.Stdout = os.Stdout
-	dockerRunCmd.Stderr = os.Stderr
-	dockerRunCmd.Stdin = os.Stdin
-
-	err = dockerRunCmd.Start()
+	debugSupervisor, err := supervisor.New(ctx, &supervisor.SupervisorClientOption{
+		Address: "localhost:24999",
+	})
 	if err != nil {
-		fmt.Println("Failed to run docker container")
+		return utils.Outcome_SystemErr, err
+	}
+
+	runLog := log.New()
+	runLog.Logger.SetFormatter(&prefixed.TextFormatter{
+		TimestampFormat: "2006-01-02 15:04:05",
+		FullTimestamp:   true,
+		ForceFormatting: true,
+		ForceColors:     true,
+	})
+	runLog.Logger.SetOutput(os.Stdout)
+
+	go func() {
+		debugSupervisor.WaitForIDEReady(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+
+		ssh := "ssh 'debug-" + wsInfo.WorkspaceId + "@" + workspaceUrl.Host + ".ssh." + wsInfo.WorkspaceClusterHost + "'"
+		sep := strings.Repeat("=", len(ssh))
+		runLog.Infof(`The Debug Workspace is UP!
+%s
+
+Open in Browser at:
+%s
+
+Connect using SSH keys (https://gitpod.io/keys):
+%s
+
+%s`, sep, workspaceUrl, ssh, sep)
+		err := notify(supervisorClient, workspaceUrl.String(), "The Debug Workspace is UP.")
+		if err != nil && ctx.Err() == nil {
+			log.WithError(err).Error("failed to notify")
+		}
+	}()
+
+	pipeLogs := func(input io.Reader) {
+		reader := bufio.NewReader(input)
+		for {
+			line, _, err := reader.ReadLine()
+			if err != nil {
+				return
+			}
+			if len(line) == 0 {
+				continue
+			}
+			msg := make(logrus.Fields)
+			err = json.Unmarshal(line, &msg)
+			if err != nil {
+				runLog.Info(string(line))
+			} else {
+				message := fmt.Sprintf("%v", msg["message"])
+				level, err := logrus.ParseLevel(fmt.Sprintf("%v", msg["level"]))
+				if err != nil {
+					level = logrus.DebugLevel
+				}
+				if level == logrus.FatalLevel {
+					level = logrus.ErrorLevel
+				}
+				if !rebuildOpts.Verbose && (level == logrus.InfoLevel || level == logrus.DebugLevel || level == logrus.TraceLevel) {
+					continue
+				}
+
+				delete(msg, "message")
+				delete(msg, "level")
+				delete(msg, "file")
+				delete(msg, "func")
+				delete(msg, "serviceContext")
+				delete(msg, "time")
+				delete(msg, "severity")
+				delete(msg, "@type")
+
+				runLog.WithFields(msg).Log(level, message)
+			}
+		}
+	}
+
+	stdout, err := runCmd.StdoutPipe()
+	if err != nil {
+		return utils.Outcome_SystemErr, err
+	}
+	go pipeLogs(stdout)
+
+	stderr, err := runCmd.StderrPipe()
+	if err != nil {
+		return utils.Outcome_SystemErr, err
+	}
+	go pipeLogs(stderr)
+
+	err = runCmd.Start()
+	if err != nil {
+		fmt.Println("Failed to run a debug workspace")
 		event.Set("ErrorCode", utils.RebuildErrorCode_DockerRunFailed)
 		return utils.Outcome_UserErr, err
 	}
-
-	_ = dockerRunCmd.Wait()
+	_ = runCmd.Wait()
 
 	return utils.Outcome_Success, nil
 }
 
-var buildCmd = &cobra.Command{
+func notify(supervisorClient *supervisor.SupervisorClient, workspaceUrl, message string) error {
+	response, err := supervisorClient.Notification.Notify(context.Background(), &supervisorapi.NotifyRequest{
+		Level:   supervisorapi.NotifyRequest_INFO,
+		Message: message,
+		Actions: []string{"Open Browser"},
+	})
+	if err != nil {
+		return err
+	}
+	if response.Action == "Open Browser" {
+		gpPath, err := exec.LookPath("gp")
+		if err != nil {
+			return err
+		}
+		gpCmd := exec.Command(gpPath, "preview", "--external", workspaceUrl)
+		gpCmd.Stdout = os.Stdout
+		gpCmd.Stderr = os.Stderr
+		return gpCmd.Run()
+	}
+	return nil
+}
+
+var rebuildOpts struct {
+	WorkspaceFolder string
+	Verbose         bool
+	From            string
+	Prebuild        bool
+}
+
+var rebuildCmd = &cobra.Command{
 	Use:    "rebuild",
-	Short:  "Re-builds the workspace image (useful to debug a workspace custom image)",
+	Short:  "Re-builds the workspace (useful to debug a workspace configuration)",
 	Hidden: false,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -255,5 +452,21 @@ var buildCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(buildCmd)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	var workspaceFolder string
+	client, err := supervisor.New(ctx)
+	if err == nil {
+		wsInfo, err := client.Info.WorkspaceInfo(ctx, &api.WorkspaceInfoRequest{})
+		if err == nil {
+			workspaceFolder = wsInfo.CheckoutLocation
+		}
+	}
+
+	rootCmd.AddCommand(rebuildCmd)
+	rebuildCmd.PersistentFlags().StringVarP(&rebuildOpts.WorkspaceFolder, "workspace-folder", "w", workspaceFolder, "path to the workspace folder")
+	rebuildCmd.PersistentFlags().BoolVarP(&rebuildOpts.Verbose, "verbose", "v", false, "enable verbose logging")
+	rebuildCmd.PersistentFlags().StringVarP(&rebuildOpts.From, "from", "", "", "starts from 'prebuild' or 'snapshot'")
+	rebuildCmd.PersistentFlags().BoolVarP(&rebuildOpts.Prebuild, "prebuild", "", false, "starts as a prebuild workspace (--from is ignored)")
 }

@@ -224,7 +224,7 @@ func (tm *tasksManager) init(ctx context.Context) {
 			successChan: make(chan taskSuccess, 1),
 			title:       presentation.Name,
 		}
-		task.command = getCommand(task, tm.config.isHeadless(), tm.contentSource, tm.storeLocation)
+		task.command = getCommand(task, tm.config.isHeadless(), tm.config.isPrebuild(), tm.contentSource, tm.storeLocation)
 		if tm.config.isHeadless() && task.command == "exit" {
 			task.State = api.TaskState_closed
 			task.successChan <- taskSuccessful
@@ -361,8 +361,8 @@ func (tm *tasksManager) Run(ctx context.Context, wg *sync.WaitGroup, successChan
 	successChan <- success
 }
 
-func getCommand(task *task, isHeadless bool, contentSource csapi.WorkspaceInitSource, storeLocation string) string {
-	commands := getCommands(task, isHeadless, contentSource, storeLocation)
+func getCommand(task *task, isHeadless bool, isPrebuild bool, contentSource csapi.WorkspaceInitSource, storeLocation string) string {
+	commands := getCommands(task, isPrebuild, contentSource, storeLocation)
 	command := composeCommand(composeCommandOptions{
 		commands: commands,
 		format:   "{\n%s\n}",
@@ -413,8 +413,8 @@ func getHistfileCommand(task *task, commands []*string, contentSource csapi.Work
 	return " HISTFILE=" + histfile + " history -r"
 }
 
-func getCommands(task *task, isHeadless bool, contentSource csapi.WorkspaceInitSource, storeLocation string) []*string {
-	if isHeadless {
+func getCommands(task *task, isPrebuild bool, contentSource csapi.WorkspaceInitSource, storeLocation string) []*string {
+	if isPrebuild {
 		// prebuild
 		return []*string{task.config.Before, task.config.Init, task.config.Prebuild}
 	}

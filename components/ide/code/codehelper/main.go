@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -34,8 +35,10 @@ var (
 )
 
 const (
-	Code                = "/ide/bin/gitpod-code"
-	ProductJsonLocation = "/ide/product.json"
+	Code                     = "/ide/bin/gitpod-code"
+	ProductJsonLocation      = "/ide/product.json"
+	WebWorkbenchMainLocation = "/ide/out/vs/workbench/workbench.web.main.js"
+	WebWorkbenchAPILocation  = "/ide/out/vs/workbench/workbench.web.api.js"
 )
 
 func main() {
@@ -56,6 +59,10 @@ func main() {
 		return
 	}
 	phaseDone()
+
+	if err := prepareWebWorkbenchMain(wsInfo); err != nil {
+		log.WithError(err).Error("failed to prepare web workbench")
+	}
 
 	// code server args install extension with id
 	args := []string{}
@@ -204,14 +211,41 @@ func replaceOpenVSXUrl() error {
 	if err != nil {
 		return errors.New("failed to read product.json: " + err.Error())
 	}
+	b = replaceOpenVSX(b)
+	if err := os.WriteFile(ProductJsonLocation, b, 0644); err != nil {
+		return errors.New("failed to write product.json: " + err.Error())
+	}
+	return nil
+}
+
+func prepareWebWorkbenchMain(wsInfo *supervisor.WorkspaceInfoResponse) error {
+	phase := phaseLogging("prepareWebWorkbenchMain")
+	defer phase()
+	b, err := os.ReadFile(WebWorkbenchMainLocation)
+	if err != nil {
+		return errors.New("failed to read " + WebWorkbenchMainLocation + ": " + err.Error())
+	}
+	url, err := url.Parse(wsInfo.GitpodHost)
+	if err != nil {
+		return errors.New("failed to parse " + wsInfo.GitpodHost + ": " + err.Error())
+	}
+	domain := url.Hostname()
+	b = bytes.ReplaceAll(b, []byte("vscode-cdn.net"), []byte(domain))
+	b = bytes.ReplaceAll(b, []byte("ide.gitpod.io/code/markeplace.json"), []byte(fmt.Sprintf("ide.%s/code/marketplace.json", domain)))
+
+	b = replaceOpenVSX(b)
+
+	if err := os.WriteFile(WebWorkbenchMainLocation, b, 0644); err != nil {
+		return errors.New("failed to write " + WebWorkbenchMainLocation + ": " + err.Error())
+	}
+	return nil
+}
+
+func replaceOpenVSX(b []byte) []byte {
 	registryUrl := os.Getenv("VSX_REGISTRY_URL")
 	if registryUrl != "" {
 		b = bytes.ReplaceAll(b, []byte("https://open-vsx.org"), []byte(registryUrl))
 	}
 	b = bytes.ReplaceAll(b, []byte("{{extensionsGalleryItemUrl}}"), []byte("https://open-vsx.org/vscode/item"))
-	b = bytes.ReplaceAll(b, []byte("{{trustedDomain}}"), []byte("https://open-vsx.org"))
-	if err := os.WriteFile(ProductJsonLocation, b, 0644); err != nil {
-		return errors.New("failed to write product.json: " + err.Error())
-	}
-	return nil
+	return bytes.ReplaceAll(b, []byte("{{trustedDomain}}"), []byte("https://open-vsx.org"))
 }
