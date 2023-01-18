@@ -108,15 +108,20 @@ jobs:
           JAVA_HOME: /home/gitpod/.sdkman/candidates/java/current
           VERSION: "${{ steps.branches.outputs.sanitized-branch-name }}.${{github.run_number}}"
           SEGMENT_IO_TOKEN: '${{ steps.secrets.outputs.segment-io-token }}'
+          NO_TEST: ${{ contains(github.event.pull_request.body, '[x] /werft no-test') }}
         run: |
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          [[ $NO_TEST -eq "false" ]] && TEST="" || TEST="--dont-test"
+          mkdir -p /__w/gitpod/gitpod/test-coverage-report
 
           RESULT=0
           leeway build components:all-ci \
             -Dversion=$VERSION \
             -DSEGMENT_IO_TOKEN=$SEGMENT_IO_TOKEN \
             -DpublishToNPM=false \
-            --dont-test \
+            $TEST \
+            --coverage-output-path=/__w/gitpod/gitpod/test-coverage-report \
             --report report.html || RESULT=$?
 
           cat report.html >> $GITHUB_STEP_SUMMARY
@@ -131,6 +136,13 @@ jobs:
           path: |
             versions.yaml
             installer
+      - name: "Upload Test Coverage Report"
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-coverage-report
+          if-no-files-found: ignore
+          path: |
+            test-coverage-report
 
   install:
     needs: [previewctl, build, infrastructure]
