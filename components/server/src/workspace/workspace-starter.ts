@@ -517,11 +517,13 @@ export class WorkspaceStarter {
                         if (resp) {
                             break;
                         }
-                        await new Promise((resolve) =>
-                            setTimeout(resolve, INSTANCE_START_RETRY_INTERVAL_SECONDS * 1000),
-                        );
+                        await new Promise((resolve) => {
+                            log.info("--> retrying workspace start");
+                            setTimeout(resolve, INSTANCE_START_RETRY_INTERVAL_SECONDS * 1000);
+                        });
                     }
                 } catch (err) {
+                    log.info("--> caught an exception starting workspace");
                     await this.failInstanceStart({ span }, err, workspace, instance);
                     throw new StartInstanceError("startOnClusterFailed", err);
                 }
@@ -663,6 +665,7 @@ export class WorkspaceStarter {
                 log.info({ instanceId: instance.id }, "starting instance");
                 return (await manager.startWorkspace(ctx, startRequest)).toObject();
             } catch (err: any) {
+                log.info("--> caught an exception in tryStartOnCluster");
                 if ("code" in err && err.code !== grpc.status.OK && lastInstallation !== "") {
                     log.error({ instanceId: instance.id }, "cannot start workspace on cluster, might retry", err, {
                         cluster: lastInstallation,
