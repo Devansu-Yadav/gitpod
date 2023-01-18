@@ -195,7 +195,6 @@ export class WorkspaceStarter {
     @inject(HostContextProvider) protected readonly hostContextProvider: HostContextProvider;
     @inject(MessageBusIntegration) protected readonly messageBus: MessageBusIntegration;
     @inject(AuthorizationService) protected readonly authService: AuthorizationService;
-    @inject(ImageBuilderClientProvider) protected readonly imagebuilderClientProvider: ImageBuilderClientProvider;
     @inject(WorkspaceClusterImagebuilderClientProvider)
     protected readonly wsClusterImageBuilderClientProvider: ImageBuilderClientProvider;
     @inject(ImageSourceProvider) protected readonly imageSourceProvider: ImageSourceProvider;
@@ -1822,37 +1821,11 @@ export class WorkspaceStarter {
      * @returns
      */
     protected async getImageBuilderClient(user: User, workspace: Workspace, instance?: WorkspaceInstance) {
-        // If cluster does not contain workspace components, must use workspace image builder client. Otherwise, check experiment value.
-        const isMovedImageBuilder =
-            this.config.withoutWorkspaceComponents ||
-            (await getExperimentsClientForBackend().getValueAsync("movedImageBuilder", true, {
-                user,
-                projectId: workspace.projectId,
-            }));
-
-        log.info(
-            { userId: user.id, workspaceId: workspace.id, instanceId: instance?.id },
-            "image-builder in workspace cluster?",
-            {
-                userId: user.id,
-                projectId: workspace.projectId,
-                isMovedImageBuilder,
-            },
+        return this.wsClusterImageBuilderClientProvider.getClient(
+            this.config.installationShortname,
+            user,
+            workspace,
+            instance,
         );
-        if (isMovedImageBuilder) {
-            return this.wsClusterImageBuilderClientProvider.getClient(
-                this.config.installationShortname,
-                user,
-                workspace,
-                instance,
-            );
-        } else {
-            return this.imagebuilderClientProvider.getClient(
-                this.config.installationShortname,
-                user,
-                workspace,
-                instance,
-            );
-        }
     }
 }
