@@ -355,7 +355,7 @@ func (tm *tasksManager) Run(ctx context.Context, wg *sync.WaitGroup, successChan
 		}
 	}
 
-	if tm.config.isHeadless() && tm.reporter != nil {
+	if tm.config.isPrebuild() && tm.reporter != nil {
 		tm.reporter.done(success)
 	}
 	successChan <- success
@@ -438,7 +438,7 @@ func prebuildLogFileName(task *task, storeLocation string) string {
 }
 
 func (tm *tasksManager) watch(task *task, term *terminal.Term) {
-	if !tm.config.isHeadless() {
+	if !tm.config.isPrebuild() {
 		return
 	}
 

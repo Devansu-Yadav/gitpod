@@ -53,7 +53,7 @@ var initCmd = &cobra.Command{
 		}
 
 		debugProxyCtx, stopDebugProxy := context.WithCancel(context.Background())
-		if os.Getenv("SUPERVISOR_DEBUG_WORKSPACE_MODE") != "" {
+		if os.Getenv("SUPERVISOR_DEBUG_WORKSPACE_TYPE") != "" {
 			err = exec.CommandContext(debugProxyCtx, supervisorPath, "debug-proxy").Start()
 			if err != nil {
 				log.WithError(err).Fatal("cannot run debug workspace proxy")

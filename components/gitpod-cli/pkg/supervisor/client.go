@@ -25,6 +25,7 @@ type SupervisorClient struct {
 	Terminal     api.TerminalServiceClient
 	Info         api.InfoServiceClient
 	Notification api.NotificationServiceClient
+	Control      api.ControlServiceClient
 }
 
 type SupervisorClientOption struct {
@@ -49,6 +50,7 @@ func New(ctx context.Context, options ...*SupervisorClientOption) (*SupervisorCl
 		Terminal:     api.NewTerminalServiceClient(conn),
 		Info:         api.NewInfoServiceClient(conn),
 		Notification: api.NewNotificationServiceClient(conn),
+		Control:      api.NewControlServiceClient(conn),
 	}, nil
 }
 

@@ -378,13 +378,7 @@ func Run(options ...RunOption) {
 	if opts.RunGP {
 		cstate.MarkContentReady(csapi.WorkspaceInitFromOther)
 	} else if cfg.isDebugWorkspace() {
-		if cfg.DebugWorkspaceMode == "prebuilt" {
-			cstate.MarkContentReady(csapi.WorkspaceInitFromPrebuild)
-		} else if cfg.DebugWorkspaceMode == "snapshot" {
-			cstate.MarkContentReady(csapi.WorkspaceInitFromBackup)
-		} else {
-			cstate.MarkContentReady(csapi.WorkspaceInitFromOther)
-		}
+		cstate.MarkContentReady(cfg.GetDebugWorkspaceContentSource())
 	} else {
 		wg.Add(1)
 		go startContentInit(ctx, cfg, &wg, cstate, supervisorMetrics)
@@ -424,7 +418,7 @@ func Run(options ...RunOption) {
 		}()
 	}
 
-	if !cfg.isPrebuild() && !opts.RunGP {
+	if !cfg.isPrebuild() && !opts.RunGP && !cfg.isDebugWorkspace() {
 		go func() {
 			for _, repoRoot := range strings.Split(cfg.RepoRoots, ",") {
 				<-cstate.ContentReady()

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -775,6 +776,45 @@ func (ss *ControlService) CreateSSHKeyPair(context.Context, *api.CreateSSHKeyPai
 	return &api.CreateSSHKeyPairResponse{
 		PrivateKey: ss.privateKey,
 	}, err
+}
+
+// CreateDebugEnv creates a debug workspace envs
+func (c *ControlService) CreateDebugEnv(ctx context.Context, req *api.CreateDebugEnvRequest) (*api.CreateDebugEnvResponse, error) {
+	var envs []string
+	for _, env := range os.Environ() {
+		if env == "" {
+			continue
+		}
+		parts := strings.SplitN(env, "=", 2)
+		key := parts[0]
+		if strings.HasPrefix(key, "THEIA_") ||
+			strings.HasPrefix(key, "GITPOD_") ||
+			// TODO IDE - get rid of env vars in images, use supervisor api as a mediator to support many IDEs running in the same worksapce?
+			// TODO PATH - use well defined locations to pick up binaries, i.e. /ide/bin or /ide-desktop/bin in supervisor?
+			key == "VSX_REGISTRY_URL" ||
+			key == "EDITOR" ||
+			key == "VISUAL" ||
+			key == "GP_OPEN_EDITOR" ||
+			key == "GIT_EDITOR" ||
+			key == "GP_PREVIEW_BROWSER" ||
+			key == "GP_EXTERNAL_BROWSER" ||
+			key == "JETBRAINS_BACKEND_QUALIFIER" {
+			envs = append(envs, env)
+		}
+	}
+	envs = append(envs, fmt.Sprintf("SUPERVISOR_DEBUG_WORKSPACE_TYPE=%d", req.GetWorkspaceType()))
+	envs = append(envs, fmt.Sprintf("SUPERVISOR_DEBUG_CONTENT_SOURCE=%d", req.GetContentSource()))
+	envs = append(envs, fmt.Sprintf("GITPOD_TASKS=%s", req.GetTasks()))
+	envs = append(envs, fmt.Sprintf("GITPOD_WORKSPACE_URL=%s", req.GetWorkspaceUrl()))
+	envs = append(envs, fmt.Sprintf("GITPOD_REPO_ROOT=%s", req.GetWorkspaceLocation()))
+	envs = append(envs, fmt.Sprintf("GITPOD_REPO_ROOTS=%s", req.GetWorkspaceLocation()))
+	envs = append(envs, fmt.Sprintf("THEIA_WORKSPACE_ROOT=%s", req.GetCheckoutLocation()))
+	envs = append(envs, fmt.Sprintf("GITPOD_PREVENT_METADATA_ACCESS=%s", "false"))
+	envs = append(envs, fmt.Sprintf("GITPOD_ANALYTICS_WRITER=%s", "none"))
+	envs = append(envs, fmt.Sprintf("GITPOD_ANALYTICS_SEGMENT_KEY=%s", ""))
+	return &api.CreateDebugEnvResponse{
+		Envs: envs,
+	}, nil
 }
 
 // ContentState signals the workspace content state.
