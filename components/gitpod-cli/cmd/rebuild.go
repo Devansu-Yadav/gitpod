@@ -7,6 +7,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -134,9 +136,37 @@ func runRebuild(ctx context.Context, supervisorClient *supervisor.SupervisorClie
 
 	dockerPath, err := exec.LookPath("docker")
 	if err != nil {
-		fmt.Println("Docker is not installed in your workspace")
-		event.Set("ErrorCode", utils.RebuildErrorCode_DockerNotFound)
-		return utils.Outcome_SystemErr, err
+		// TODO: Ask if user want's to download the docker using the automated script: https://github.com/docker/docker-install/blob/master/rootless-install.sh
+		// TODO: Throw event.Set("ErrorCode", utils.RebuildErrorCode_DockerNotFound) if user decides not to install it.
+		fmt.Println("Docker is not installed in your workspace, so we're going to install it for you...")
+
+		resp, err := http.Get("https://get.docker.com/rootless")
+		if err != nil {
+			return utils.Outcome_SystemErr, err
+		}
+		defer resp.Body.Close()
+
+		dockerInstallScript := filepath.Join(tmpDir, "get-docker.sh")
+
+		file, err := os.Create(dockerInstallScript)
+		if err != nil {
+			return utils.Outcome_SystemErr, err
+		}
+		defer file.Close()
+
+		_, err = io.Copy(file, resp.Body)
+		if err != nil {
+			return utils.Outcome_SystemErr, err
+		}
+
+		dockerInstallCmd := exec.CommandContext(ctx, "sh", dockerInstallScript)
+		dockerInstallCmd.Env = append(dockerInstallCmd.Environ(), "FORCE_ROOTLESS_INSTALL=1")
+		dockerInstallCmd.Stdout = os.Stdout
+		dockerInstallCmd.Stderr = os.Stderr
+		err = dockerInstallCmd.Run()
+		if err != nil {
+			return utils.Outcome_SystemErr, err
+		}
 	}
 
 	tag := "gp-rebuild-temp-build"
