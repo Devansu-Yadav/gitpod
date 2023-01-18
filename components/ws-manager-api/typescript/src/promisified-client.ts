@@ -126,6 +126,7 @@ export class PromisifiedWorkspaceManagerClient implements Disposable {
                         (err, resp) => {
                             span.finish();
                             if (err) {
+                                log.info("--> caught an error in promisified client");
                                 TraceContext.setError(ctx, err);
                                 reject(err);
                             } else {
