@@ -42,7 +42,7 @@ const (
 	KindGitpod = "gitpod"
 )
 
-var errNotConnected = errors.New("not connected to server/public api")
+var errNotConnected = errors.New("not connected to ser ver/public api")
 
 type ServiceConfig struct {
 	Host              string
