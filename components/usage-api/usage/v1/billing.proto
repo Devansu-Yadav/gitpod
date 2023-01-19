@@ -24,8 +24,8 @@ service BillingService {
 
   rpc CreateStripeSubscription(CreateStripeSubscriptionRequest) returns (CreateStripeSubscriptionResponse) {};
 
-  // GetStripeSubscription without passing in the `status` will return uncancelled subscriptions
-  // Stripe returns a list which may include more than one, but we will throw an error in that case
+  // GetStripeSubscription returns the subscription available to a given cost center
+  // If the user is subscribed the subscriptionTime will be set
   rpc GetStripeSubscription(GetStripeSubscriptionRequest) returns (GetStripeSubscriptionResponse) {};
 }
 
@@ -93,9 +93,9 @@ message StripeSubscription {
 
 message GetStripeSubscriptionRequest {
   string attribution_id = 1;
-  string status = 2;
 }
 
 message GetStripeSubscriptionResponse {
   string subscription_id = 1;
+  string human_readable_description = 2;
 }

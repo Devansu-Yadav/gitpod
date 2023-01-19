@@ -1,4 +1,4 @@
-// Copyright (c) 2022 Gitpod GmbH. All rights reserved.
+// Copyright (c) 2023 Gitpod GmbH. All rights reserved.
 // Licensed under the GNU Affero General Public License (AGPL).
 // See License.AGPL.txt in the project root for license information.
 
@@ -39,8 +39,8 @@ type BillingServiceClient interface {
 	GetStripeCustomer(ctx context.Context, in *GetStripeCustomerRequest, opts ...grpc.CallOption) (*GetStripeCustomerResponse, error)
 	CreateStripeCustomer(ctx context.Context, in *CreateStripeCustomerRequest, opts ...grpc.CallOption) (*CreateStripeCustomerResponse, error)
 	CreateStripeSubscription(ctx context.Context, in *CreateStripeSubscriptionRequest, opts ...grpc.CallOption) (*CreateStripeSubscriptionResponse, error)
-	// GetStripeSubscription without passing in the `status` will return uncancelled subscriptions
-	// Stripe returns a list which may include more than one, but we will throw an error in that case
+	// GetStripeSubscription returns the subscription available to a given cost center
+	// If the user is subscribed the subscriptionTime will be set
 	GetStripeSubscription(ctx context.Context, in *GetStripeSubscriptionRequest, opts ...grpc.CallOption) (*GetStripeSubscriptionResponse, error)
 }
 
@@ -132,8 +132,8 @@ type BillingServiceServer interface {
 	GetStripeCustomer(context.Context, *GetStripeCustomerRequest) (*GetStripeCustomerResponse, error)
 	CreateStripeCustomer(context.Context, *CreateStripeCustomerRequest) (*CreateStripeCustomerResponse, error)
 	CreateStripeSubscription(context.Context, *CreateStripeSubscriptionRequest) (*CreateStripeSubscriptionResponse, error)
-	// GetStripeSubscription without passing in the `status` will return uncancelled subscriptions
-	// Stripe returns a list which may include more than one, but we will throw an error in that case
+	// GetStripeSubscription returns the subscription available to a given cost center
+	// If the user is subscribed the subscriptionTime will be set
 	GetStripeSubscription(context.Context, *GetStripeSubscriptionRequest) (*GetStripeSubscriptionResponse, error)
 	mustEmbedUnimplementedBillingServiceServer()
 }

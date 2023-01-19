@@ -382,6 +382,50 @@ func (s *BillingService) CancelSubscription(ctx context.Context, in *v1.CancelSu
 	return &v1.CancelSubscriptionResponse{}, nil
 }
 
+func (s *BillingService) GetStripeSubscription(ctx context.Context, req *v1.GetStripeSubscriptionRequest) (*v1.GetStripeSubscriptionResponse, error) {
+	attributionID, err := db.ParseAttributionID(req.GetAttributionId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid attribution ID %s", attributionID)
+	}
+
+	customer, err := s.GetStripeCustomer(ctx, &v1.GetStripeCustomerRequest{
+		Identifier: &v1.GetStripeCustomerRequest_AttributionId{
+			AttributionId: string(attributionID),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	stripeCustomer, err := s.stripeClient.GetCustomer(ctx, customer.Customer.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	// if the customer has an active subscription, return that information
+	for _, subscription := range stripeCustomer.Subscriptions.Data {
+		if subscription.Status != "canceled" {
+			return &v1.GetStripeSubscriptionResponse{
+				SubscriptionId:           subscription.ID,
+				HumanReadableDescription: subscription.Plan.Metadata["human_readable_description"],
+			}, nil
+		}
+	}
+	priceID, err := getPriceIdentifier(attributionID, stripeCustomer, s)
+	if err != nil {
+		return nil, err
+	}
+	price, err := s.stripeClient.GetPriceInformation(ctx, priceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &v1.GetStripeSubscriptionResponse{
+		SubscriptionId:           "",
+		HumanReadableDescription: price.Metadata["human_readable_description"],
+	}, nil
+}
+
 func (s *BillingService) storeStripeCustomer(ctx context.Context, cus *stripe_api.Customer, attributionID db.AttributionID) (*v1.StripeCustomer, error) {
 	err := db.CreateStripeCustomer(ctx, s.conn, db.StripeCustomer{
 		StripeCustomerID: cus.ID,
