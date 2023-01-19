@@ -106,21 +106,14 @@ jobs:
           LEEWAY_TARGET=$(echo "$PR_DESC" | sed -n -e 's/^.*Leeway target: //p')
           [[ $NO_CACHE -eq "false" ]] && CACHE="remote" || CACHE="none"
 
-          sleep 10000
-          read -r -d '' CMD << EOM
+          RESULT=0
           leeway build $LEEWAY_TARGET \
             --cache $CACHE \
             -Dversion=$VERSION \
             -DSEGMENT_IO_TOKEN=$SEGMENT_IO_TOKEN \
             -DpublishToNPM=false \
             --dont-test \
-            --report report.html
-          EOM
-
-          echo "Running \n$CMD"
-
-          RESULT=0
-          eval "$CMD" || RESULT=$?
+            --report report.html || RESULT=$?
 
           cat report.html >> $GITHUB_STEP_SUMMARY
           cp /tmp/versions.yaml /__w/gitpod/gitpod/versions.yaml
