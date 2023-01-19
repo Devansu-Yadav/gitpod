@@ -103,7 +103,7 @@ jobs:
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-          LEEWAY_TARGET=$(echo "$PR_DESC" | sed -n -e 's/^.*Leeway target: //p')
+          LEEWAY_TARGET=$(echo "$PR_DESC" | sed -n -e 's/^.*Leeway target: //p' | xargs)
           [[ $NO_CACHE -eq "false" ]] && CACHE="remote" || CACHE="none"
 
           RESULT=0
