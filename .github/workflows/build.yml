@@ -116,8 +116,8 @@ jobs:
             --report report.html || RESULT=$?
 
           cat report.html >> $GITHUB_STEP_SUMMARY
-          [[ -f /tmp/versions.yaml ]] cp /tmp/versions.yaml /__w/gitpod/gitpod/versions.yaml
-          [[ -f /tmp/installer ]]     cp /tmp/installer     /__w/gitpod/gitpod/installer
+          [[ -f /tmp/versions.yaml ]] && cp /tmp/versions.yaml /__w/gitpod/gitpod/versions.yaml
+          [[ -f /tmp/installer ]]     && cp /tmp/installer     /__w/gitpod/gitpod/installer
 
           exit $RESULT
       - name: "Upload Installer artifacts"
