@@ -88,7 +88,7 @@ jobs:
         with:
           secrets: |-
             segment-io-token:gitpod-core-dev/segment-io-token
-      - name: Leeway Build components:all-ci
+      - name: Leeway Build
         id: leeway
         shell: bash
         working-directory: /workspace/gitpod
@@ -107,6 +107,7 @@ jobs:
           [[ $NO_CACHE -eq "false" ]] && CACHE="remote" || CACHE="none"
 
           read -r -d '' CMD << EOM
+          sleep 10000
           leeway build $LEEWAY_TARGET \
             --cache $CACHE \
             -Dversion=$VERSION \
