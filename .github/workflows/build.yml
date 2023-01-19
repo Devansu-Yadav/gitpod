@@ -99,6 +99,8 @@ jobs:
           PR_DESC: '${{ github.event.pull_request.body }}'
           NO_CACHE: ${{ contains(github.event.pull_request.body, '[x] Leeway no-cache') }}
         run: |
+          set -x
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
           LEEWAY_TARGET=$(echo "$PR_DESC" | sed -n -e 's/^.*Leeway target: //p')
