@@ -18,6 +18,7 @@ const phases = {
 
 const installerSlices = {
     INSTALL: "Generate, validate, and install Gitpod",
+    DEDICATED_PRESEED: "Preseed for Dedicated",
 };
 
 const vmSlices = {
@@ -113,6 +114,20 @@ export async function deployToPreviewEnvironment(werft: Werft, jobConfig: JobCon
             );
         } catch (err) {
             werft.fail(installerSlices.INSTALL, err);
+        }
+
+        if (jobConfig.withDedicatedEmulation) {
+            // After the installation is done, and everything is running, we need to prepare first-time access for the admin-user
+            try {
+                werft.log(installerSlices.DEDICATED_PRESEED, "preseed for dedicated");
+                exec(`kubectl port-forward deployment/server 9000 &`);
+                const adminLoginOts = exec(`curl -X POST localhost:9000/admin-user/login-token/create`).stdout.trim();
+                exec(
+                    `werft log result -d "admin login OTS token" ${adminLoginOts}`,
+                );
+            } catch (err) {
+                werft.fail(installerSlices.DEDICATED_PRESEED, err);
+            }
         }
     })();
 
