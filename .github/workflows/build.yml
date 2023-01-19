@@ -96,16 +96,28 @@ jobs:
           JAVA_HOME: /home/gitpod/.sdkman/candidates/java/current
           VERSION: "${{ steps.branches.outputs.sanitized-branch-name }}.${{github.run_number}}"
           SEGMENT_IO_TOKEN: '${{ steps.secrets.outputs.segment-io-token }}'
+          PR_DESC: '${{ github.event.pull_request.body }}'
+          NO_CACHE: ${{ contains(github.event.pull_request.body, '[x] Leeway no-cache') }}
         run: |
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-          RESULT=0
-          leeway build components:all-ci \
+          LEEWAY_TARGET=$(echo "$PR_DESC" | sed -n -e 's/^.*Leeway target: //p')
+          [[ $NO_CACHE -eq "false" ]] && CACHE="remote" || CACHE="none"
+
+          read -r -d '' CMD << EOM
+          leeway build $LEEWAY_TARGET \
+            --cache $CACHE \
             -Dversion=$VERSION \
             -DSEGMENT_IO_TOKEN=$SEGMENT_IO_TOKEN \
             -DpublishToNPM=false \
             --dont-test \
-            --report report.html || RESULT=$?
+            --report report.html
+          EOM
+
+          echo "Running \n$CMD"
+
+          RESULT=0
+          eval "$CMD" || RESULT=$?
 
           cat report.html >> $GITHUB_STEP_SUMMARY
           cp /tmp/versions.yaml /__w/gitpod/gitpod/versions.yaml
