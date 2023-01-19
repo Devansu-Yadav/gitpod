@@ -104,7 +104,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
           LEEWAY_TARGET=$(echo "$PR_DESC" | sed -n -e 's/^.*Leeway target: //p' | sed 's/\r$//')
-          [[ "$NO_CACHE" -eq "true" ]] && CACHE="none" || CACHE="remote"
+          [[ "$NO_CACHE" = "true" ]] && CACHE="none" || CACHE="remote"
 
           RESULT=0
           leeway build $LEEWAY_TARGET \
@@ -116,14 +116,15 @@ jobs:
             --report report.html || RESULT=$?
 
           cat report.html >> $GITHUB_STEP_SUMMARY
-          cp /tmp/versions.yaml /__w/gitpod/gitpod/versions.yaml
-          cp /tmp/installer /__w/gitpod/gitpod/installer
+          [[ -f /tmp/versions.yaml ]] cp /tmp/versions.yaml /__w/gitpod/gitpod/versions.yaml
+          [[ -f /tmp/installer ]]     cp /tmp/installer     /__w/gitpod/gitpod/installer
 
           exit $RESULT
       - name: "Upload Installer artifacts"
         uses: actions/upload-artifact@v3
         with:
           name: installer-artifacts
+          if-no-files-found: ignore
           path: |
             versions.yaml
             installer
