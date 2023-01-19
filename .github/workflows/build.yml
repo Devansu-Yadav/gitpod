@@ -106,8 +106,8 @@ jobs:
           LEEWAY_TARGET=$(echo "$PR_DESC" | sed -n -e 's/^.*Leeway target: //p')
           [[ $NO_CACHE -eq "false" ]] && CACHE="remote" || CACHE="none"
 
-          read -r -d '' CMD << EOM
           sleep 10000
+          read -r -d '' CMD << EOM
           leeway build $LEEWAY_TARGET \
             --cache $CACHE \
             -Dversion=$VERSION \
